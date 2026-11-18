@@ -17,17 +17,30 @@ class FinancierLink {
   final HTMLElement root = h('section.jr-section.fin-link');
   int _seq = 0;
 
+  /// The last summary read and when: the Portfolio page re-renders on every live account update (every few
+  /// seconds with IBKR connected), so the section redraws from this instead of blanking and re-reading Firestore.
+  J? _summary;
+  DateTime? _readAt;
+  static const _maxAge = Duration(minutes: 2);
+
   /// Loads and renders. [positions] are Autobench's open positions (live, with `stop`/`target`, or from the
   /// latest statement), compared with Financier's plans.
   Future<void> load(List<J> positions, {bool refresh = false}) async {
     final seq = ++_seq;
-    replace(root, [_head(null), h('div.muted.small', 'Reading Financier…')]);
+    final cached = _summary;
+    if (cached != null) {
+      replace(root, _render(cached, positions));
+      if (!refresh && DateTime.now().difference(_readAt!) < _maxAge) return;
+    } else {
+      replace(root, [_head(null), h('div.muted.small', 'Reading Financier…')]);
+    }
     J s;
     try {
       s = await request('/api/financier/summary${refresh ? '?refresh=1' : ''}');
       if (s['available'].v == false) throw s['error'].s ?? 'no access';
     } catch (e) {
       if (seq != _seq) return;
+      if (cached != null && !refresh) return; // a background re-read failed: keep showing the last good data
       replace(root, [
         _head(null),
         h('div.muted.small', ['Financier data unavailable: ', h('span.error', '$e')]),
@@ -37,6 +50,8 @@ class FinancierLink {
       ]);
       return;
     }
+    _summary = s;
+    _readAt = DateTime.now();
     if (seq != _seq) return;
     replace(root, _render(s, positions));
   }
