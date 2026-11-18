@@ -171,6 +171,22 @@ class TradingPage {
     ]);
   }
 
+  /// Why the broker is offline. With a managed Gateway the broker's last socket error ("Connection refused" on
+  /// the API port) is just the Gateway not being logged in yet: show the Gateway's state instead.
+  String _offlineReason(TStatus st) {
+    if (st.kind == 'ibkr' && st.gatewayManaged) {
+      switch (st.gatewayState) {
+        case 'starting':
+          return st.gateway['awaiting_2fa'].b == true ? 'Waiting for your IBKR second-factor approval' : 'Logging in to IBKR…';
+        case 'failed':
+          return 'IB Gateway failed to start';
+        case 'stopped':
+          return 'IB Gateway is not running';
+      }
+    }
+    return st.message ?? 'Not connected';
+  }
+
   void _renderHead() {
     final st = trade.status.value;
     final conn = st == null
@@ -182,7 +198,7 @@ class TradingPage {
             if (st.connected && st.multiAccount)
               _accountPicker(st)
             else
-              h('span.muted.small', st.connected ? (st.account ?? '') : (st.message ?? 'Not connected')),
+              h('span.muted.small', st.connected ? (st.account ?? '') : _offlineReason(st)),
           ]);
     replace(_head, [
       h('h2', 'Trading'),
